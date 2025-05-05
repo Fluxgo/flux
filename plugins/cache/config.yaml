@@ -1,0 +1,10 @@
+name: cache
+version: 1.0.0
+description: Redis-based caching plugin for flux
+
+config:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  prefix: "flux:cache:" 
