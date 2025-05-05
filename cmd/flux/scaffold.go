@@ -167,7 +167,7 @@ view:
 go 1.24.2
 
 require (
-	github.com/Fluxgo/flux v0.0.0-20250410105738-69dbba69f7f0
+	github.com/Fluxgo/flux v0.1.0
 )
 `
 
