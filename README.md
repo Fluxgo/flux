@@ -16,8 +16,6 @@ flux is a modern, full-stack web framework for Go — designed to combine develo
 
 ## Implementation Details
 
-### Why Fiber?
-
 flux is built on top of the [Fiber](https://github.com/gofiber/fiber) web framework for several reasons:
 
 1. **Performance**: Fiber is built on top of [fasthttp](https://github.com/valyala/fasthttp), which is significantly faster than Go's standard net/http package
