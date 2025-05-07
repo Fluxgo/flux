@@ -164,10 +164,10 @@ view:
 
 	modContent := `module ` + name + `
 
-go 1.24.2
+go 1.20
 
 require (
-	github.com/Fluxgo/flux v0.1.0
+	github.com/Fluxgo/flux v0.1.1
 )
 `
 
