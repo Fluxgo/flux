@@ -60,6 +60,41 @@ func init() {
 		},
 	}
 
+	makeMiddlewareCmd := &cobra.Command{
+		Use:   "make:middleware [name]",
+		Short: "Generate a new middleware",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := generateMiddleware(args[0]); err != nil {
+				fmt.Printf("Error generating middleware: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
+
+	makeServiceCmd := &cobra.Command{
+		Use:   "make:service [name]",
+		Short: "Generate a new service",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := generateService(args[0]); err != nil {
+				fmt.Printf("Error generating service: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
+
+	docGenerateCmd := &cobra.Command{
+		Use:   "doc:generate",
+		Short: "Generate OpenAPI documentation",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := generateDocumentation(); err != nil {
+				fmt.Printf("Error generating documentation: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
+
 	makeMigrationCmd := &cobra.Command{
 		Use:   "make:migration [name]",
 		Short: "Generate a new database migration",
@@ -119,6 +154,9 @@ func init() {
 	rootCmd.AddCommand(newCmd)
 	rootCmd.AddCommand(makeControllerCmd)
 	rootCmd.AddCommand(makeModelCmd)
+	rootCmd.AddCommand(makeMiddlewareCmd) 
+	rootCmd.AddCommand(makeServiceCmd)    
+	rootCmd.AddCommand(docGenerateCmd)    
 	rootCmd.AddCommand(makeMigrationCmd)
 	rootCmd.AddCommand(makeMicroserviceCmd)
 	rootCmd.AddCommand(serveCmd)
@@ -301,7 +339,6 @@ func generateMigration(name string, modelName string) error {
 	return nil
 }
 
-
 func microserviceCommand(c *cli.Context) error {
 	name := c.String("name")
 	if name == "" {
@@ -319,7 +356,6 @@ func microserviceCommand(c *cli.Context) error {
 		WithAuth:    c.Bool("with-auth"),
 	}
 
-	
 	err := flux.CreateMicroserviceProject(config)
 	if err != nil {
 		return err
@@ -329,25 +365,22 @@ func microserviceCommand(c *cli.Context) error {
 	return nil
 }
 
-
 func serveCommand(c *cli.Context) error {
 	port := c.Int("port")
 	host := c.String("host")
-	microserviceName := c.String("microservice") 
+	microserviceName := c.String("microservice")
 
 	if microserviceName != "" {
-		
+
 		fmt.Printf(" flux Starting microservice: %s on port %d\n", microserviceName, port)
 		fmt.Println(" Using configuration from: config\\config.yaml")
-		
-		
+
 		useHotReload := !c.Bool("no-reload")
 		if useHotReload {
 			fmt.Println(" Hot reload is enabled - your changes will apply automatically.")
 			os.Setenv("flux_HOT_RELOAD", "true")
 		}
-		
-		
+
 		cmdDir := filepath.Join("cmd", microserviceName)
 		if _, err := os.Stat(cmdDir); os.IsNotExist(err) {
 			return fmt.Errorf("microservice directory %s does not exist", cmdDir)
@@ -373,21 +406,20 @@ func serveCommand(c *cli.Context) error {
 				return fmt.Errorf("failed to build microservice: %w", err)
 			}
 
-			runCmd := exec.Command("./"+microserviceName+".exe")
+			runCmd := exec.Command("./" + microserviceName + ".exe")
 			runCmd.Stdout = os.Stdout
 			runCmd.Stderr = os.Stderr
 			return runCmd.Run()
 		}
 	}
 
-	
 	fmt.Printf(" [flux] Starting server on %s:%d\n", host, port)
-	
+
 	useHotReload := !c.Bool("no-reload")
 	if useHotReload {
 		fmt.Println(" Hot reload is enabled - your changes will apply automatically.")
 	}
-	
+
 	return nil
 }
 
