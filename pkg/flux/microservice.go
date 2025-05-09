@@ -169,7 +169,7 @@ func (ms *Microservice) Setup() error {
 	return nil
 }
 
-// Start starts the microservice
+// Start the microservice
 func (ms *Microservice) Start() error {
 	if !ms.isSetup {
 		if err := ms.Setup(); err != nil {
@@ -408,7 +408,7 @@ func CreateMicroserviceProject(config *MicroserviceConfig) error {
 go 1.20
 
 require (
-	github.com/Fluxgo/flux v0.1.2
+	github.com/Fluxgo/flux v0.1.3
 	github.com/gofiber/fiber/v2 v2.52.6
 )
 `, name)

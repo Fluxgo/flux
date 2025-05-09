@@ -168,7 +168,7 @@ view:
 go 1.20
 
 require (
-	github.com/Fluxgo/flux v0.1.2
+	github.com/Fluxgo/flux v0.1.3
 )
 `
 
@@ -1224,12 +1224,11 @@ func main() {
 func generateDocumentation() error {
 	fmt.Println("Starting API documentation generation...")
 	
-	// Ensure the docs directory exists
+	
 	if err := os.MkdirAll(filepath.Join("docs"), 0755); err != nil {
 		return fmt.Errorf("failed to create docs directory: %w", err)
 	}
 
-	// Load configuration
 	config := &flux.Config{
 		Name:        "API Documentation Generator",
 		Version:     "1.0.0",
@@ -1241,7 +1240,6 @@ func generateDocumentation() error {
 		},
 	}
 
-	// Create a temporary app for documentation generation
 	app, err := flux.New(config)
 	if err != nil {
 		return fmt.Errorf("failed to create temporary app: %w", err)
@@ -1267,11 +1265,11 @@ func generateDocumentation() error {
 		}
 	}
 
-	// Generate the OpenAPI documentation
+	
 	fmt.Println("Processing API routes and generating OpenAPI specification...")
 	spec := app.GenerateOpenAPISpec()
 
-	// Write OpenAPI spec to a JSON file
+	
 	specJSON, err := app.OpenAPISpecToJSON()
 	if err != nil {
 		return fmt.Errorf("failed to generate OpenAPI JSON: %w", err)
@@ -1283,7 +1281,7 @@ func generateDocumentation() error {
 	}
 	fmt.Printf("Generated OpenAPI specification: %s\n", openAPIPath)
 
-	// Generate YAML version too
+	
 	openAPIYAMLPath := filepath.Join("docs", "openapi.yaml")
 	specYAML, err := app.OpenAPISpecToYAML()
 	if err != nil {
@@ -1296,94 +1294,26 @@ func generateDocumentation() error {
 		}
 	}
 
-	// Generate Swagger UI
+	
 	swaggerUIPath := filepath.Join("docs", "swagger.html")
-	swaggerUI, err := generateSwaggerUI(spec)
-	if err != nil {
-		return fmt.Errorf("failed to generate Swagger UI: %w", err)
-	}
-
+	swaggerUI := generateSwaggerUIHTML()
 	if err := os.WriteFile(swaggerUIPath, []byte(swaggerUI), 0644); err != nil {
 		return fmt.Errorf("failed to write Swagger UI file: %w", err)
 	}
 	fmt.Printf("Generated Swagger UI: %s\n", swaggerUIPath)
 
-	// Generate a Redoc UI too for an alternative documentation view
+	
 	redocUIPath := filepath.Join("docs", "redoc.html")
-	redocUI, err := generateRedocUI(spec)
-	if err != nil {
-		fmt.Printf("Warning: Could not generate Redoc UI: %v\n", err)
+	redocUI := generateRedocUIHTML()
+	if err := os.WriteFile(redocUIPath, []byte(redocUI), 0644); err != nil {
+		fmt.Printf("Warning: Could not write Redoc UI file: %v\n", err)
 	} else {
-		if err := os.WriteFile(redocUIPath, []byte(redocUI), 0644); err != nil {
-			fmt.Printf("Warning: Could not write Redoc UI file: %v\n", err)
-		} else {
-			fmt.Printf("Generated Redoc UI: %s\n", redocUIPath)
-		}
+		fmt.Printf("Generated Redoc UI: %s\n", redocUIPath)
 	}
 
-	// Generate API documentation server file
+	
 	serverFilePath := filepath.Join("docs", "serve.go")
-	serverContent := `package main
-
-import (
-	"fmt"
-	"log"
-	"net/http"
-	"os"
-	"path/filepath"
-)
-
-func main() {
-	port := "8080"
-	if len(os.Args) > 1 {
-		port = os.Args[1]
-	}
-
-	// Get the absolute path to the docs directory
-	exePath, err := os.Executable()
-	if err != nil {
-		log.Fatalf("Failed to get executable path: %v", err)
-	}
-	docsDir := filepath.Dir(exePath)
-
-	// Serve the Swagger UI
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Redirect root to Swagger UI
-		http.Redirect(w, r, "/swagger", http.StatusMovedPermanently)
-	})
-
-	// Swagger UI endpoint
-	http.HandleFunc("/swagger", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join(docsDir, "swagger.html"))
-	})
-
-	// Redoc UI endpoint
-	http.HandleFunc("/redoc", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join(docsDir, "redoc.html"))
-	})
-
-	// OpenAPI JSON specification
-	http.HandleFunc("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		http.ServeFile(w, r, filepath.Join(docsDir, "openapi.json"))
-	})
-
-	// OpenAPI YAML specification
-	http.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/yaml")
-		http.ServeFile(w, r, filepath.Join(docsDir, "openapi.yaml"))
-	})
-
-	fmt.Printf("API Documentation server started at http://localhost:%s\n", port)
-	fmt.Printf("Swagger UI available at http://localhost:%s/swagger\n", port)
-	fmt.Printf("Redoc UI available at http://localhost:%s/redoc\n", port)
-	fmt.Printf("OpenAPI spec available at http://localhost:%s/openapi.json\n", port)
-
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
-}
-`
+	serverContent := generateServerCode()
 	if err := os.WriteFile(serverFilePath, []byte(serverContent), 0644); err != nil {
 		fmt.Printf("Warning: Could not write documentation server file: %v\n", err)
 	} else {
@@ -1391,59 +1321,9 @@ func main() {
 		fmt.Println("You can run the documentation server with: go run docs/serve.go")
 	}
 
-	// Create README for documentation
+	
 	readmePath := filepath.Join("docs", "README.md")
-	readmeContent := fmt.Sprintf(`# API Documentation
-
-This directory contains the API documentation for the application.
-
-## Available Documentation
-
-- [OpenAPI Specification (JSON)](openapi.json)
-- [OpenAPI Specification (YAML)](openapi.yaml)
-- [Swagger UI](swagger.html)
-- [Redoc UI](redoc.html)
-
-## Viewing the Documentation
-
-You can view the documentation in several ways:
-
-### 1. Using the Documentation Server
-
-Run the documentation server:
-
-```bash
-go run serve.go [port]
-```
-
-The default port is 8080. Once running, you can access:
-
-- Swagger UI: http://localhost:8080/swagger
-- Redoc UI: http://localhost:8080/redoc
-- OpenAPI JSON: http://localhost:8080/openapi.json
-
-### 2. Directly Opening HTML Files
-
-You can open the HTML files directly in your browser:
-
-- Open \`swagger.html\` for Swagger UI
-- Open \`redoc.html\` for Redoc UI
-
-### 3. Use with External Tools
-
-The \`openapi.json\` and \`openapi.yaml\` files can be imported into tools like Postman, Insomnia, or any OpenAPI-compatible tool.
-
-## Updating the Documentation
-
-The documentation is generated from the API routes and controller comments. To update it, run:
-
-```bash
-flux doc:generate
-```
-
-This will scan your application's routes and controllers to generate updated documentation.
-`)
-
+	readmeContent := generateReadmeContent()
 	if err := os.WriteFile(readmePath, []byte(readmeContent), 0644); err != nil {
 		fmt.Printf("Warning: Could not write documentation README: %v\n", err)
 	} else {
@@ -1457,155 +1337,8 @@ This will scan your application's routes and controllers to generate updated doc
 	return nil
 }
 
-// Helper function to extract route documentation from controller files
-func extractRouteCommentsFromControllers(controllersDir string, entries []os.DirEntry) []flux.RouteDoc {
-	var routes []flux.RouteDoc
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
-			continue
-		}
-
-		filePath := filepath.Join(controllersDir, entry.Name())
-		fileContent, err := os.ReadFile(filePath)
-		if err != nil {
-			fmt.Printf("Warning: Could not read controller file %s: %v\n", entry.Name(), err)
-			continue
-		}
-
-		
-		fileRoutes := extractRoutesFromFileContent(string(fileContent), entry.Name())
-		routes = append(routes, fileRoutes...)
-	}
-
-	return routes
-}
-
-// Helper function to extract route information from file content
-func extractRoutesFromFileContent(content, fileName string) []flux.RouteDoc {
-	var routes []flux.RouteDoc
-	lines := strings.Split(content, "\n")
-
-	var currentRoute *flux.RouteDoc
-	var collectingParams bool
-	var collectingResponses bool
-
-	for _, line := range lines {
-		trimmedLine := strings.TrimSpace(line)
-
-		// Look for route definitions in comments
-		if strings.HasPrefix(trimmedLine, "// Route:") {
-			// Start a new route
-			if currentRoute != nil {
-				routes = append(routes, *currentRoute)
-			}
-
-			currentRoute = &flux.RouteDoc{}
-			collectingParams = false
-			collectingResponses = false
-
-			// Extract HTTP method and path
-			routeParts := strings.SplitN(strings.TrimPrefix(trimmedLine, "// Route:"), " ", 3)
-			if len(routeParts) >= 2 {
-				currentRoute.Method = strings.TrimSpace(routeParts[0])
-				currentRoute.Path = strings.TrimSpace(routeParts[1])
-			}
-		} else if currentRoute != nil && strings.HasPrefix(trimmedLine, "// Description:") {
-			// Extract description
-			currentRoute.Description = strings.TrimSpace(strings.TrimPrefix(trimmedLine, "// Description:"))
-		} else if currentRoute != nil && strings.HasPrefix(trimmedLine, "// Param:") {
-			// Start collecting parameters
-			collectingParams = true
-			collectingResponses = false
-
-			// Extract parameter info
-			paramInfo := strings.TrimSpace(strings.TrimPrefix(trimmedLine, "// Param:"))
-			if currentRoute.Params == nil {
-				currentRoute.Params = []map[string]string{}
-			}
-			
-			// Parse parameter information (name, location, type, required, description)
-			paramParts := strings.SplitN(paramInfo, " - ", 5)
-			if len(paramParts) >= 4 {
-				param := map[string]string{
-					"name":     strings.TrimSpace(paramParts[0]),
-					"in":       strings.TrimSpace(paramParts[1]),
-					"type":     strings.TrimSpace(paramParts[2]),
-					"required": strings.TrimSpace(paramParts[3]) == "required" ? "true" : "false",
-				}
-				
-				if len(paramParts) >= 5 {
-					param["description"] = strings.TrimSpace(paramParts[4])
-				}
-				
-				currentRoute.Params = append(currentRoute.Params, param)
-			}
-		} else if currentRoute != nil && strings.HasPrefix(trimmedLine, "// Response:") {
-			
-			collectingParams = false
-			collectingResponses = true
-
-			
-			responseInfo := strings.TrimSpace(strings.TrimPrefix(trimmedLine, "// Response:"))
-			if currentRoute.Responses == nil {
-				currentRoute.Responses = []map[string]string{}
-			}
-			
-			
-			responseParts := strings.SplitN(responseInfo, " - ", 2)
-			if len(responseParts) >= 2 {
-				response := map[string]string{
-					"status":      strings.TrimSpace(responseParts[0]),
-					"description": strings.TrimSpace(responseParts[1]),
-				}
-				
-				currentRoute.Responses = append(currentRoute.Responses, response)
-			}
-		} else if strings.HasPrefix(trimmedLine, "func (") && strings.Contains(trimmedLine, ") ") {
-			// This might be a handler function definition
-			if currentRoute != nil {
-				// Extract handler name from function definition
-				handlerMatch := extractHandlerName(trimmedLine)
-				if handlerMatch != "" {
-					currentRoute.Handler = handlerMatch
-					routes = append(routes, *currentRoute)
-					currentRoute = nil
-				}
-			}
-		}
-	}
-
-	// Append the last route if it exists
-	if currentRoute != nil && currentRoute.Method != "" && currentRoute.Path != "" {
-		routes = append(routes, *currentRoute)
-	}
-
-	return routes
-}
-
-// Helper function to extract handler name from function definition
-func extractHandlerName(line string) string {
-	
-	parts := strings.Split(line, "func ")
-	if len(parts) < 2 {
-		return ""
-	}
-	
-	funcParts := strings.Split(parts[1], "(")
-	if len(funcParts) < 2 {
-		return ""
-	}
-	
-	receiverAndName := strings.Split(funcParts[0], " ")
-	if len(receiverAndName) < 2 {
-		return ""
-	}
-	
-	return receiverAndName[1]
-}
-
-// Helper function to generate Swagger UI HTML
-func generateSwaggerUI(spec interface{}) (string, error) {
+// Helper functions to generate documentation artifacts
+func generateSwaggerUIHTML() string {
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1646,11 +1379,11 @@ func generateSwaggerUI(spec interface{}) (string, error) {
     };
   </script>
 </body>
-</html>`, nil
+</html>`
 }
 
-// Helper function to generate Redoc UI HTML
-func generateRedocUI(spec interface{}) (string, error) {
+
+func generateRedocUIHTML() string {
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1665,7 +1398,271 @@ func generateRedocUI(spec interface{}) (string, error) {
   <redoc spec-url="openapi.json"></redoc>
   <script src="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"></script>
 </body>
-</html>`, nil
+</html>`
+}
+
+
+func generateServerCode() string {
+	return `package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+)
+
+func main() {
+	port := "8080"
+	if len(os.Args) > 1 {
+		port = os.Args[1]
+	}
+
+	
+	exePath, err := os.Executable()
+	if err != nil {
+		log.Fatalf("Failed to get executable path: %v", err)
+	}
+	docsDir := filepath.Dir(exePath)
+
+	
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		
+		http.Redirect(w, r, "/swagger", http.StatusMovedPermanently)
+	})
+
+	
+	http.HandleFunc("/swagger", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join(docsDir, "swagger.html"))
+	})
+
+	
+	http.HandleFunc("/redoc", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join(docsDir, "redoc.html"))
+	})
+
+	
+	http.HandleFunc("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		http.ServeFile(w, r, filepath.Join(docsDir, "openapi.json"))
+	})
+
+	
+	http.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml")
+		http.ServeFile(w, r, filepath.Join(docsDir, "openapi.yaml"))
+	})
+
+	fmt.Printf("API Documentation server started at http://localhost:%s\n", port)
+	fmt.Printf("Swagger UI available at http://localhost:%s/swagger\n", port)
+	fmt.Printf("Redoc UI available at http://localhost:%s/redoc\n", port)
+	fmt.Printf("OpenAPI spec available at http://localhost:%s/openapi.json\n", port)
+
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}`
+}
+
+
+func generateReadmeContent() string {
+	return `# API Documentation
+
+This directory contains the API documentation for the application.
+
+## Available Documentation
+
+- [OpenAPI Specification (JSON)](openapi.json)
+- [OpenAPI Specification (YAML)](openapi.yaml)
+- [Swagger UI](swagger.html)
+- [Redoc UI](redoc.html)
+
+## Viewing the Documentation
+
+You can view the documentation in several ways:
+
+### 1. Using the Documentation Server
+
+Run the documentation server:
+
+` + "```bash" + `
+go run serve.go [port]
+` + "```" + `
+
+The default port is 8080. Once running, you can access:
+
+- Swagger UI: http://localhost:8080/swagger
+- Redoc UI: http://localhost:8080/redoc
+- OpenAPI JSON: http://localhost:8080/openapi.json
+
+### 2. Directly Opening HTML Files
+
+You can open the HTML files directly in your browser:
+
+- Open ` + "`swagger.html`" + ` for Swagger UI
+- Open ` + "`redoc.html`" + ` for Redoc UI
+
+### 3. Use with External Tools
+
+The ` + "`openapi.json`" + ` and ` + "`openapi.yaml`" + ` files can be imported into tools like Postman, Insomnia, or any OpenAPI-compatible tool.
+
+## Updating the Documentation
+
+The documentation is generated from the API routes and controller comments. To update it, run:
+
+` + "```bash" + `
+flux doc:generate
+` + "```" + `
+
+This will scan your application's routes and controllers to generate updated documentation.`
+}
+
+// Helper function to extract route documentation from controller files
+func extractRouteCommentsFromControllers(controllersDir string, entries []os.DirEntry) []flux.RouteDoc {
+	var routes []flux.RouteDoc
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+
+		filePath := filepath.Join(controllersDir, entry.Name())
+		fileContent, err := os.ReadFile(filePath)
+		if err != nil {
+			fmt.Printf("Warning: Could not read controller file %s: %v\n", entry.Name(), err)
+			continue
+		}
+
+		
+		fileRoutes := extractRoutesFromFileContent(string(fileContent), entry.Name())
+		routes = append(routes, fileRoutes...)
+	}
+
+	return routes
+}
+
+// Helper function to extract route information from file content
+func extractRoutesFromFileContent(content, fileName string) []flux.RouteDoc {
+	var routes []flux.RouteDoc
+	lines := strings.Split(content, "\n")
+
+	var currentRoute *flux.RouteDoc
+	var collectingParams bool
+	var collectingResponses bool
+
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+
+		
+		if strings.HasPrefix(trimmedLine, "// Route:") {
+			
+			if currentRoute != nil {
+				routes = append(routes, *currentRoute)
+			}
+
+			currentRoute = &flux.RouteDoc{}
+			collectingParams = false
+			collectingResponses = false
+
+			
+			routeParts := strings.SplitN(strings.TrimPrefix(trimmedLine, "// Route:"), " ", 3)
+			if len(routeParts) >= 2 {
+				currentRoute.Method = strings.TrimSpace(routeParts[0])
+				currentRoute.Path = strings.TrimSpace(routeParts[1])
+			}
+		} else if currentRoute != nil && strings.HasPrefix(trimmedLine, "// Description:") {
+			
+			currentRoute.Description = strings.TrimSpace(strings.TrimPrefix(trimmedLine, "// Description:"))
+		} else if currentRoute != nil && strings.HasPrefix(trimmedLine, "// Param:") {
+			
+			collectingParams = true
+			collectingResponses = false
+
+			
+			paramInfo := strings.TrimSpace(strings.TrimPrefix(trimmedLine, "// Param:"))
+			if currentRoute.Params == nil {
+				currentRoute.Params = []map[string]string{}
+			}
+			
+			
+			paramParts := strings.SplitN(paramInfo, " - ", 5)
+			if len(paramParts) >= 4 {
+				param := map[string]string{
+					"name":     strings.TrimSpace(paramParts[0]),
+					"in":       strings.TrimSpace(paramParts[1]),
+					"type":     strings.TrimSpace(paramParts[2]),
+					"required": strings.Contains(strings.TrimSpace(paramParts[3]), "required") ? "true" : "false",
+				}
+				
+				if len(paramParts) >= 5 {
+					param["description"] = strings.TrimSpace(paramParts[4])
+				}
+				
+				currentRoute.Params = append(currentRoute.Params, param)
+			}
+		} else if currentRoute != nil && strings.HasPrefix(trimmedLine, "// Response:") {
+			
+			collectingParams = false
+			collectingResponses = true
+
+			
+			responseInfo := strings.TrimSpace(strings.TrimPrefix(trimmedLine, "// Response:"))
+			if currentRoute.Responses == nil {
+				currentRoute.Responses = []map[string]string{}
+			}
+			
+			
+			responseParts := strings.SplitN(responseInfo, " - ", 2)
+			if len(responseParts) >= 2 {
+				response := map[string]string{
+					"status":      strings.TrimSpace(responseParts[0]),
+					"description": strings.TrimSpace(responseParts[1]),
+				}
+				
+				currentRoute.Responses = append(currentRoute.Responses, response)
+			}
+		} else if strings.HasPrefix(trimmedLine, "func (") && strings.Contains(trimmedLine, ") ") {
+			
+			if currentRoute != nil {
+				
+				handlerMatch := extractHandlerName(trimmedLine)
+				if handlerMatch != "" {
+					currentRoute.Handler = handlerMatch
+					routes = append(routes, *currentRoute)
+					currentRoute = nil
+				}
+			}
+		}
+	}
+
+	
+	if currentRoute != nil && currentRoute.Method != "" && currentRoute.Path != "" {
+		routes = append(routes, *currentRoute)
+	}
+
+	return routes
+}
+
+// Helper function to extract handler name from function def
+func extractHandlerName(line string) string {
+	
+	parts := strings.Split(line, "func ")
+	if len(parts) < 2 {
+		return ""
+	}
+	
+	funcParts := strings.Split(parts[1], "(")
+	if len(funcParts) < 2 {
+		return ""
+	}
+	
+	receiverAndName := strings.Split(funcParts[0], " ")
+	if len(receiverAndName) < 2 {
+		return ""
+	}
+	
+	return receiverAndName[1]
 }
 
 func getCurrentModuleName() string {
