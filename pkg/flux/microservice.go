@@ -408,7 +408,7 @@ func CreateMicroserviceProject(config *MicroserviceConfig) error {
 go 1.20
 
 require (
-	github.com/Fluxgo/flux v0.1.3
+	github.com/Fluxgo/flux v0.1.4
 	github.com/gofiber/fiber/v2 v2.52.6
 )
 `, name)
