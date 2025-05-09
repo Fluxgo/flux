@@ -1,10 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/Fluxgo/flux/pkg/flux"
 )
 
 type ProjectTemplate struct {
@@ -49,7 +53,6 @@ func createNewProject(name string) error {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
-
 	mainContent := `package main
 
 import (
@@ -57,6 +60,7 @@ import (
 	"log"
 
 	"github.com/Fluxgo/flux/pkg/flux"
+	"` + name + `/routes" // Import the routes package
 )
 
 func main() {
@@ -84,7 +88,10 @@ func main() {
 		log.Fatalf("Failed to create application: %v", err)
 	}
 
-	// controllers' Reg
+	// Register all routes
+	routes.RegisterAllRoutes(app)
+	
+	// Register individual controllers if needed
 	// app.RegisterController(&UserController{})
 
 	// Start the server
@@ -167,7 +174,7 @@ view:
 go 1.20
 
 require (
-	github.com/Fluxgo/flux v0.1.4
+	github.com/Fluxgo/flux v0.1.5
 )
 `
 
@@ -230,17 +237,14 @@ func generateController(name string) error {
 		name += "Controller"
 	}
 
-	
 	if err := os.MkdirAll(filepath.Join("app", "controllers"), 0755); err != nil {
 		return fmt.Errorf("failed to create controllers directory: %w", err)
 	}
-	
-	
+
 	if err := os.MkdirAll(filepath.Join("app", "models"), 0755); err != nil {
 		return fmt.Errorf("failed to create models directory: %w", err)
 	}
-	
-	
+
 	if err := os.MkdirAll(filepath.Join("routes"), 0755); err != nil {
 		return fmt.Errorf("failed to create routes directory: %w", err)
 	}
@@ -463,12 +467,11 @@ func Register` + strings.TrimSuffix(name, "Controller") + `Routes(app *flux.Appl
 }
 `
 
-	
 	mainRoutesPath := filepath.Join("routes", "main.go")
 	var mainRoutesContent string
-	
+
 	if _, err := os.Stat(mainRoutesPath); os.IsNotExist(err) {
-		
+
 		mainRoutesContent = `package routes
 
 import (
@@ -482,57 +485,52 @@ func RegisterAllRoutes(app *flux.Application) {
 }
 `
 	} else {
-		
+
 		existingContent, err := os.ReadFile(mainRoutesPath)
 		if err != nil {
 			return fmt.Errorf("failed to read main routes file: %w", err)
 		}
-		
+
 		contentStr := string(existingContent)
-		
-		
+
 		if !strings.Contains(contentStr, "Register"+strings.TrimSuffix(name, "Controller")+"Routes") {
-			
+
 			registerFuncIndex := strings.Index(contentStr, "func RegisterAllRoutes")
 			if registerFuncIndex > 0 {
 				closingBraceIndex := strings.Index(contentStr[registerFuncIndex:], "}") + registerFuncIndex
-				
+
 				if closingBraceIndex > registerFuncIndex {
-					
-					mainRoutesContent = contentStr[:closingBraceIndex] + 
+
+					mainRoutesContent = contentStr[:closingBraceIndex] +
 						"\n\t// Register " + strings.TrimSuffix(name, "Controller") + " routes\n" +
 						"\tRegister" + strings.TrimSuffix(name, "Controller") + "Routes(app)\n" +
 						contentStr[closingBraceIndex:]
 				} else {
-					
+
 					mainRoutesContent = contentStr
 				}
 			} else {
-				
+
 				mainRoutesContent = contentStr
 			}
 		} else {
-			
+
 			mainRoutesContent = contentStr
 		}
 	}
 
-	
 	if err := os.MkdirAll(filepath.Join("app", "controllers"), 0755); err != nil {
 		return fmt.Errorf("failed to create controllers directory: %w", err)
 	}
 
-	
 	if err := os.MkdirAll(filepath.Join("app", "models"), 0755); err != nil {
 		return fmt.Errorf("failed to create models directory: %w", err)
 	}
 
-	
 	if err := os.MkdirAll(filepath.Join("routes"), 0755); err != nil {
 		return fmt.Errorf("failed to create routes directory: %w", err)
 	}
 
-	
 	if err := os.WriteFile(filepath.Join("app", "controllers", strings.ToLower(strings.TrimSuffix(name, "Controller"))+"_controller.go"), []byte(controllerContent), 0644); err != nil {
 		return fmt.Errorf("failed to create controller file: %w", err)
 	}
@@ -544,13 +542,11 @@ func RegisterAllRoutes(app *flux.Application) {
 	if err := os.WriteFile(filepath.Join("app", "controllers", strings.ToLower(strings.TrimSuffix(name, "Controller"))+"_types.go"), []byte(typesContent), 0644); err != nil {
 		return fmt.Errorf("failed to create types file: %w", err)
 	}
-	
-	
+
 	if err := os.WriteFile(filepath.Join("routes", strings.ToLower(strings.TrimSuffix(name, "Controller"))+"_routes.go"), []byte(routesContent), 0644); err != nil {
 		return fmt.Errorf("failed to create functional routes file: %w", err)
 	}
 
-	
 	if mainRoutesContent != "" {
 		if err := os.WriteFile(mainRoutesPath, []byte(mainRoutesContent), 0644); err != nil {
 			return fmt.Errorf("failed to update main routes file: %w", err)
@@ -560,7 +556,7 @@ func RegisterAllRoutes(app *flux.Application) {
 	fmt.Printf("Generated controller: %s\n", name)
 	fmt.Printf("Generated model: %s\n", strings.TrimSuffix(name, "Controller"))
 	fmt.Printf("Generated functional routes: routes/%s_routes.go\n", strings.ToLower(strings.TrimSuffix(name, "Controller")))
-	
+
 	return nil
 }
 
@@ -694,6 +690,440 @@ func (r *` + name + `Repository) Count() (int64, error) {
 
 	fmt.Printf("Generated model: %s\n", name)
 	return nil
+}
+
+func generateMiddleware(name string) error {
+	name = strings.ToUpper(name[:1]) + name[1:]
+	if !strings.HasSuffix(name, "Middleware") {
+		name += "Middleware"
+	}
+
+	// Create middleware directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Join("app", "middleware"), 0755); err != nil {
+		return fmt.Errorf("failed to create middleware directory: %w", err)
+	}
+
+	middlewareContent := `package middleware
+
+import (
+	"github.com/Fluxgo/flux/pkg/flux"
+	"github.com/gofiber/fiber/v2"
+)
+
+// ` + name + ` is a middleware that handles ` + strings.TrimSuffix(name, "Middleware") + ` functionality
+func ` + name + `() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		// Middleware logic here
+		// Example: Authentication check, request validation, logging, etc.
+		
+		// Get the flux context
+		ctx := &flux.Context{Ctx: c}
+		
+		// Example middleware implementation:
+		// 1. Extract data or validate request
+		// requestID := c.Get("X-Request-ID")
+		
+		// 2. Set values in context if needed
+		// c.Locals("request_id", requestID)
+		
+		// 3. Perform checks
+		// if !someCondition {
+		//     return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		// }
+		
+		// 4. Continue to next middleware or route handler
+		return c.Next()
+	}
+}
+
+// Register` + name + ` registers the middleware with the application
+func Register` + name + `(app *flux.Application) {
+	// Global middleware registration
+	// app.Use(` + name + `())
+	
+	// Or group-specific middleware
+	// apiGroup := app.Group("/api")
+	// apiGroup.Use(` + name + `())
+}
+`
+
+	if err := os.WriteFile(filepath.Join("app", "middleware", strings.ToLower(strings.TrimSuffix(name, "Middleware"))+"_middleware.go"), []byte(middlewareContent), 0644); err != nil {
+		return fmt.Errorf("failed to create middleware file: %w", err)
+	}
+
+	fmt.Printf("Generated middleware: %s\n", name)
+	return nil
+}
+
+func generateService(name string) error {
+	name = strings.ToUpper(name[:1]) + name[1:]
+	if !strings.HasSuffix(name, "Service") {
+		name += "Service"
+	}
+
+	// Create services directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Join("app", "services"), 0755); err != nil {
+		return fmt.Errorf("failed to create services directory: %w", err)
+	}
+
+	serviceContent := `package services
+
+import (
+	"` + getCurrentModuleName() + `/app/models"
+	"` + getCurrentModuleName() + `/app/repositories"
+	"github.com/Fluxgo/flux/pkg/flux"
+)
+
+// ` + name + ` provides business logic for ` + strings.TrimSuffix(name, "Service") + ` operations
+type ` + name + ` struct {
+	app *flux.Application
+	// Add repositories or other dependencies here
+	// repo *repositories.` + strings.TrimSuffix(name, "Service") + `Repository
+}
+
+// New` + name + ` creates a new instance of ` + name + `
+func New` + name + `(app *flux.Application) *` + name + ` {
+	return &` + name + `{
+		app: app,
+		// Initialize repositories or other dependencies here
+		// repo: repositories.New` + strings.TrimSuffix(name, "Service") + `Repository(app.DB()),
+	}
+}
+
+// Get` + strings.TrimSuffix(name, "Service") + ` retrieves a ` + strings.TrimSuffix(name, "Service") + ` by ID
+func (s *` + name + `) Get` + strings.TrimSuffix(name, "Service") + `(id uint) (interface{}, error) {
+	// Example service method implementation
+	// return s.repo.FindByID(id)
+	
+	// Placeholder implementation
+	return map[string]interface{}{
+		"id":   id,
+		"name": "Sample ` + strings.TrimSuffix(name, "Service") + `",
+	}, nil
+}
+
+// GetAll` + strings.TrimSuffix(name, "Service") + `s retrieves all ` + strings.TrimSuffix(name, "Service") + `s
+func (s *` + name + `) GetAll` + strings.TrimSuffix(name, "Service") + `s() ([]interface{}, error) {
+	// Example service method implementation
+	// return s.repo.FindAll()
+	
+	// Placeholder implementation
+	return []interface{}{
+		map[string]interface{}{
+			"id":   1,
+			"name": "Sample ` + strings.TrimSuffix(name, "Service") + ` 1",
+		},
+		map[string]interface{}{
+			"id":   2,
+			"name": "Sample ` + strings.TrimSuffix(name, "Service") + ` 2",
+		},
+	}, nil
+}
+
+// Create` + strings.TrimSuffix(name, "Service") + ` creates a new ` + strings.TrimSuffix(name, "Service") + `
+func (s *` + name + `) Create` + strings.TrimSuffix(name, "Service") + `(data map[string]interface{}) (interface{}, error) {
+	// Example service method implementation
+	// newItem := &models.` + strings.TrimSuffix(name, "Service") + `{
+	//     Name: data["name"].(string),
+	// }
+	// err := s.repo.Create(newItem)
+	// return newItem, err
+	
+	// Placeholder implementation
+	return map[string]interface{}{
+		"id":   3,
+		"name": data["name"],
+	}, nil
+}
+
+// Update` + strings.TrimSuffix(name, "Service") + ` updates an existing ` + strings.TrimSuffix(name, "Service") + `
+func (s *` + name + `) Update` + strings.TrimSuffix(name, "Service") + `(id uint, data map[string]interface{}) (interface{}, error) {
+	// Example service method implementation
+	// item, err := s.repo.FindByID(id)
+	// if err != nil {
+	//     return nil, err
+	// }
+	// 
+	// // Update fields
+	// if name, ok := data["name"].(string); ok {
+	//     item.Name = name
+	// }
+	// 
+	// err = s.repo.Update(item)
+	// return item, err
+	
+	// Placeholder implementation
+	return map[string]interface{}{
+		"id":   id,
+		"name": data["name"],
+	}, nil
+}
+
+// Delete` + strings.TrimSuffix(name, "Service") + ` deletes a ` + strings.TrimSuffix(name, "Service") + ` by ID
+func (s *` + name + `) Delete` + strings.TrimSuffix(name, "Service") + `(id uint) error {
+	// Example service method implementation
+	// return s.repo.Delete(id)
+	
+	// Placeholder implementation
+	return nil
+}
+`
+
+	// Create the service file
+	if err := os.WriteFile(filepath.Join("app", "services", strings.ToLower(strings.TrimSuffix(name, "Service"))+"_service.go"), []byte(serviceContent), 0644); err != nil {
+		return fmt.Errorf("failed to create service file: %w", err)
+	}
+
+	fmt.Printf("Generated service: %s\n", name)
+	return nil
+}
+
+func generateDocumentation() error {
+	outputDir := filepath.Join("docs")
+
+	
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create docs directory: %w", err)
+	}
+
+	
+	app, err := flux.New(&flux.Config{
+		Name:        getCurrentModuleName(),
+		Version:     "1.0.0",
+		Description: "API Documentation",
+		Server: flux.ServerConfig{
+			Host: "localhost",
+			Port: 3000,
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to create application for documentation: %w", err)
+	}
+
+	
+	app.Routes()
+
+	
+	spec, err := app.GenerateOpenAPI()
+	if err != nil {
+		return fmt.Errorf("failed to generate OpenAPI specification: %w", err)
+	}
+
+	
+	jsonSpec, err := json.MarshalIndent(spec, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+
+	// Save OpenAPI specification to file
+	if err := os.WriteFile(filepath.Join(outputDir, "openapi.json"), jsonSpec, 0644); err != nil {
+		return fmt.Errorf("failed to write OpenAPI specification: %w", err)
+	}
+
+	// Generate Swagger UI HTML
+	swaggerUI, err := flux.GenerateSwaggerUI(spec)
+	if err != nil {
+		return fmt.Errorf("failed to generate Swagger UI: %w", err)
+	}
+
+	
+	if err := os.WriteFile(filepath.Join(outputDir, "swagger.html"), []byte(swaggerUI), 0644); err != nil {
+		return fmt.Errorf("failed to write Swagger UI: %w", err)
+	}
+
+	
+	markdown := generateMarkdownDocumentation(app, spec)
+
+	
+	if err := os.WriteFile(filepath.Join(outputDir, "api.md"), []byte(markdown), 0644); err != nil {
+		return fmt.Errorf("failed to write markdown documentation: %w", err)
+	}
+
+	fmt.Printf("Documentation generated in %s directory:\n", outputDir)
+	fmt.Println("- OpenAPI specification: openapi.json")
+	fmt.Println("- Swagger UI: swagger.html")
+	fmt.Println("- Markdown documentation: api.md")
+
+	return nil
+}
+
+func generateMarkdownDocumentation(app *flux.Application, spec *flux.OpenAPISpec) string {
+	var doc strings.Builder
+
+	doc.WriteString("# API Documentation\n\n")
+	doc.WriteString(fmt.Sprintf("## %s\n\n", spec.Info.Title))
+	doc.WriteString(fmt.Sprintf("%s\n\n", spec.Info.Description))
+	doc.WriteString(fmt.Sprintf("Version: %s\n\n", spec.Info.Version))
+
+	doc.WriteString("## Endpoints\n\n")
+
+	
+	var paths []string
+	for path := range spec.Paths {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		pathItem := spec.Paths[path]
+
+		
+		for _, method := range []struct {
+			Name      string
+			Operation *flux.Operation
+		}{
+			{"GET", pathItem.Get},
+			{"POST", pathItem.Post},
+			{"PUT", pathItem.Put},
+			{"DELETE", pathItem.Delete},
+			{"PATCH", pathItem.Patch},
+		} {
+			if method.Operation != nil {
+				doc.WriteString(fmt.Sprintf("### %s %s\n\n", method.Name, path))
+				doc.WriteString(fmt.Sprintf("**Description:** %s\n\n", method.Operation.Description))
+
+				
+				if len(method.Operation.Parameters) > 0 {
+					doc.WriteString("**Parameters:**\n\n")
+					doc.WriteString("| Name | Located in | Description | Required | Schema |\n")
+					doc.WriteString("| ---- | ---------- | ----------- | -------- | ------ |\n")
+
+					for _, param := range method.Operation.Parameters {
+						doc.WriteString(fmt.Sprintf("| %s | %s | %s | %t | %s |\n",
+							param.Name, param.In, param.Description, param.Required, getSchemaType(param.Schema)))
+					}
+					doc.WriteString("\n")
+				}
+
+				
+				if method.Operation.RequestBody != nil {
+					doc.WriteString("**Request Body:**\n\n")
+					doc.WriteString(fmt.Sprintf("Description: %s\n\n", method.Operation.RequestBody.Description))
+					doc.WriteString("Content Type: application/json\n\n")
+
+					
+					for contentType, mediaType := range method.Operation.RequestBody.Content {
+						if mediaType.Schema != nil && mediaType.Schema.Properties != nil {
+							doc.WriteString(fmt.Sprintf("Schema (%s):\n\n", contentType))
+							doc.WriteString("| Property | Type | Description | Required |\n")
+							doc.WriteString("| -------- | ---- | ----------- | -------- |\n")
+
+							var required map[string]bool = make(map[string]bool)
+							for _, req := range mediaType.Schema.Required {
+								required[req] = true
+							}
+
+							for propName, propSchema := range mediaType.Schema.Properties {
+								doc.WriteString(fmt.Sprintf("| %s | %s | %s | %t |\n",
+									propName, getSchemaType(propSchema), propSchema.Description, required[propName]))
+							}
+							doc.WriteString("\n")
+						}
+					}
+				}
+
+				
+				doc.WriteString("**Responses:**\n\n")
+				doc.WriteString("| Status Code | Description | Schema |\n")
+				doc.WriteString("| ----------- | ----------- | ------ |\n")
+
+				var codes []string
+				for code := range method.Operation.Responses {
+					codes = append(codes, code)
+				}
+				sort.Strings(codes)
+
+				for _, code := range codes {
+					response := method.Operation.Responses[code]
+
+					
+					schemaType := "No content"
+					for _, mediaType := range response.Content {
+						if mediaType.Schema != nil {
+							schemaType = getSchemaType(mediaType.Schema)
+							break
+						}
+					}
+
+					doc.WriteString(fmt.Sprintf("| %s | %s | %s |\n", code, response.Description, schemaType))
+				}
+				doc.WriteString("\n---\n\n")
+			}
+		}
+	}
+
+	
+	if len(spec.Components.Schemas) > 0 {
+		doc.WriteString("## Models\n\n")
+
+		var schemaNames []string
+		for name := range spec.Components.Schemas {
+			schemaNames = append(schemaNames, name)
+		}
+		sort.Strings(schemaNames)
+
+		for _, name := range schemaNames {
+			schema := spec.Components.Schemas[name]
+			doc.WriteString(fmt.Sprintf("### %s\n\n", name))
+
+			if schema.Description != "" {
+				doc.WriteString(fmt.Sprintf("%s\n\n", schema.Description))
+			}
+
+			if len(schema.Properties) > 0 {
+				doc.WriteString("| Property | Type | Description | Required |\n")
+				doc.WriteString("| -------- | ---- | ----------- | -------- |\n")
+
+				var required map[string]bool = make(map[string]bool)
+				for _, req := range schema.Required {
+					required[req] = true
+				}
+
+				var propNames []string
+				for propName := range schema.Properties {
+					propNames = append(propNames, propName)
+				}
+				sort.Strings(propNames)
+
+				for _, propName := range propNames {
+					propSchema := schema.Properties[propName]
+					doc.WriteString(fmt.Sprintf("| %s | %s | %s | %t |\n",
+						propName, getSchemaType(propSchema), propSchema.Description, required[propName]))
+				}
+				doc.WriteString("\n")
+			}
+		}
+	}
+
+	return doc.String()
+}
+
+func getSchemaType(schema *flux.Schema) string {
+	if schema == nil {
+		return "unknown"
+	}
+
+	switch schema.Type {
+	case "array":
+		if schema.Items != nil {
+			return fmt.Sprintf("array of %s", getSchemaType(schema.Items))
+		}
+		return "array"
+	case "object":
+		if len(schema.Properties) > 0 {
+			return "object"
+		}
+		if schema.AdditionalProperties != nil {
+			return fmt.Sprintf("map[string]%s", getSchemaType(schema.AdditionalProperties))
+		}
+		return "object"
+	default:
+		if schema.Format != "" {
+			return fmt.Sprintf("%s (%s)", schema.Type, schema.Format)
+		}
+		return schema.Type
+	}
 }
 
 func getCurrentModuleName() string {
