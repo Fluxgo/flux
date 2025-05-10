@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// generateAdvancedController creates a new controller with extended CRUD methods
+
 func generateAdvancedController(name string) error {
 	name = strings.ToUpper(name[:1]) + name[1:]
 	if !strings.HasSuffix(name, "Controller") {
@@ -187,7 +187,7 @@ type Update` + strings.TrimSuffix(name, "Controller") + `Request struct {
 }
 `
 
-	// Update main.go to register the new controller
+	
 	mainPath := "main.go"
 	if _, err := os.Stat(mainPath); err == nil {
 		mainContent, err := os.ReadFile(mainPath)
@@ -197,11 +197,11 @@ type Update` + strings.TrimSuffix(name, "Controller") + `Request struct {
 
 		mainContentStr := string(mainContent)
 		
-		// Find the right spot to insert controller registration
+		
 		importSection := "import ("
 		controllersImport := "\"" + getCurrentModuleName() + "/app/controllers\""
 		
-		// Add controllers import if it doesn't exist
+		
 		if !strings.Contains(mainContentStr, controllersImport) && strings.Contains(mainContentStr, importSection) {
 			importEnd := strings.Index(mainContentStr, ")")
 			if importEnd > 0 {
@@ -209,7 +209,7 @@ type Update` + strings.TrimSuffix(name, "Controller") + `Request struct {
 			}
 		}
 		
-		// Add controller registration before "Start the server" comment
+		
 		startServerComment := "// Start the server"
 		controllerRegistration := "\t// Register " + strings.TrimSuffix(name, "Controller") + " controller\n\tapp.RegisterController(&controllers." + name + "{})\n\n\t"
 		
@@ -217,7 +217,7 @@ type Update` + strings.TrimSuffix(name, "Controller") + `Request struct {
 			mainContentStr = strings.Replace(mainContentStr, startServerComment, controllerRegistration+startServerComment, 1)
 		}
 		
-		// Save updated main.go
+		
 		if err := os.WriteFile(mainPath, []byte(mainContentStr), 0644); err != nil {
 			return fmt.Errorf("failed to update main.go: %w", err)
 		}

@@ -353,7 +353,7 @@ func microserviceCommand(c *cli.Context) error {
 		return errors.New("microservice name is required")
 	}
 
-	// Create new microservice configuration
+	
 	config := &flux.MicroserviceConfig{
 		Name:        name,
 		Port:        c.Int("port"),
