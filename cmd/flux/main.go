@@ -35,18 +35,26 @@ func init() {
 			installSuccessMessage()
 		},
 	}
-
 	makeControllerCmd := &cobra.Command{
 		Use:   "make:controller [name]",
 		Short: "Generate a new controller",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := generateController(args[0]); err != nil {
-				fmt.Printf("Error generating controller: %v\n", err)
-				os.Exit(1)
+			advanced, _ := cmd.Flags().GetBool("advanced")
+			if advanced {
+				if err := generateAdvancedController(args[0]); err != nil {
+					fmt.Printf("Error generating advanced controller: %v\n", err)
+					os.Exit(1)
+				}
+			} else {
+				if err := generateController(args[0]); err != nil {
+					fmt.Printf("Error generating controller: %v\n", err)
+					os.Exit(1)
+				}
 			}
 		},
 	}
+	makeControllerCmd.Flags().BoolP("advanced", "a", false, "Generate an advanced controller with additional features")
 
 	makeModelCmd := &cobra.Command{
 		Use:   "make:model [name]",

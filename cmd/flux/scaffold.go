@@ -47,12 +47,12 @@ func createNewProject(name string) error {
 		filepath.Join(name, "storage", "logs"),
 		filepath.Join(name, "storage", "uploads"),
 	}
-
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
+	
 	mainContent := `package main
 
 import (
@@ -60,7 +60,8 @@ import (
 	"log"
 
 	"github.com/Fluxgo/flux/pkg/flux"
-	"` + name + `/routes" // Import the routes package
+	// Import your controllers and models as needed
+	// "` + name + `/app/controllers"
 )
 
 func main() {
@@ -88,12 +89,11 @@ func main() {
 		log.Fatalf("Failed to create application: %v", err)
 	}
 
-	// Register all routes
-	routes.RegisterAllRoutes(app)
+	// Register controllers directly
+	// Example: app.RegisterController(&controllers.UserController{})
+	// To register a new controller, simply uncomment the import above
+	// and add a line to register your controller here
 	
-	// Register individual controllers if needed
-	// app.RegisterController(&UserController{})
-
 	// Start the server
 	fmt.Printf("Server starting on http://localhost:3000\n")
 	if err := app.Start(); err != nil {
@@ -174,7 +174,7 @@ view:
 go 1.20
 
 require (
-	github.com/Fluxgo/flux v0.1.5
+	github.com/Fluxgo/flux v0.1.6
 )
 `
 
