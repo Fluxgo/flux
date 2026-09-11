@@ -16,8 +16,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "flux",
-	Short: "flux - The GoPowerhouse",
+	Use:     "flux",
+	Short:   "flux - The GoPowerhouse",
+	Version: flux.Version,
 	Long: `flux is a modern, full-stack web framework for Go — 
 designed to combine developer happiness, performance, and structure.`,
 }
@@ -353,7 +354,6 @@ func microserviceCommand(c *cli.Context) error {
 		return errors.New("microservice name is required")
 	}
 
-	
 	config := &flux.MicroserviceConfig{
 		Name:        name,
 		Port:        c.Int("port"),

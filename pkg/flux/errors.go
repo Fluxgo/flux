@@ -38,6 +38,11 @@ func (e *AppError) Error() string {
 	return e.Message
 }
 
+// Unwrap makes AppError work with errors.Is and errors.As.
+func (e *AppError) Unwrap() error {
+	return e.Err
+}
+
 func (e *AppError) WithError(err error) *AppError {
 	clone := *e
 	clone.Err = err
@@ -46,17 +51,23 @@ func (e *AppError) WithError(err error) *AppError {
 
 func (e *AppError) WithDetails(details map[string]interface{}) *AppError {
 	clone := *e
-	clone.Details = details
+	clone.Details = cloneDetails(details)
 	return &clone
 }
 
 func (e *AppError) WithDetail(key string, value interface{}) *AppError {
 	clone := *e
-	if clone.Details == nil {
-		clone.Details = make(map[string]interface{})
-	}
+	clone.Details = cloneDetails(e.Details)
 	clone.Details[key] = value
 	return &clone
+}
+
+func cloneDetails(details map[string]interface{}) map[string]interface{} {
+	clone := make(map[string]interface{}, len(details)+1)
+	for key, value := range details {
+		clone[key] = value
+	}
+	return clone
 }
 
 func (e *AppError) WithCode(code string) *AppError {
