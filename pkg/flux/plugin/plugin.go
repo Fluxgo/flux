@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"plugin"
 	"sync"
 )
 
@@ -27,11 +26,11 @@ type Plugin interface {
 }
 
 type Manager struct {
-	plugins     map[string]Plugin
-	app         AppInterface
-	mu          sync.RWMutex
-	pluginDir   string
-	configPath  string
+	plugins    map[string]Plugin
+	app        AppInterface
+	mu         sync.RWMutex
+	pluginDir  string
+	configPath string
 }
 
 type Config struct {
@@ -51,8 +50,11 @@ func (m *Manager) LoadPlugins() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if err := os.MkdirAll(m.pluginDir, 0755); err != nil {
-		return fmt.Errorf("failed to create plugin directory: %w", err)
+	if _, err := os.Stat(m.pluginDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to inspect plugin directory: %w", err)
 	}
 
 	config, err := m.loadConfig()
@@ -69,40 +71,9 @@ func (m *Manager) LoadPlugins() error {
 			return nil
 		}
 
-		p, err := plugin.Open(path)
-		if err != nil {
-			return fmt.Errorf("failed to load plugin %s: %w", path, err)
-		}
-
-		newFunc, err := p.Lookup("New")
-		if err != nil {
-			return fmt.Errorf("plugin %s does not export New function: %w", path, err)
-		}
-
-		pluginFunc, ok := newFunc.(func() (Plugin, error))
-		if !ok {
-			return fmt.Errorf("plugin %s New function has invalid signature", path)
-		}
-
-		plugin, err := pluginFunc()
-		if err != nil {
-			return fmt.Errorf("failed to create plugin instance %s: %w", path, err)
-		}
-
-		if !config[plugin.Name()].Enabled {
-			return nil
-		}
-
-		if err := plugin.Init(m.app); err != nil {
-			return fmt.Errorf("failed to initialize plugin %s: %w", path, err)
-		}
-
-		m.plugins[plugin.Name()] = plugin
-
-		return nil
+		return m.loadSharedObject(path, config)
 	})
 }
-
 
 func (m *Manager) UnloadPlugins() error {
 	m.mu.Lock()
@@ -118,7 +89,6 @@ func (m *Manager) UnloadPlugins() error {
 	return nil
 }
 
-
 func (m *Manager) GetPlugin(name string) (Plugin, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -126,7 +96,6 @@ func (m *Manager) GetPlugin(name string) (Plugin, bool) {
 	plugin, ok := m.plugins[name]
 	return plugin, ok
 }
-
 
 func (m *Manager) loadConfig() (map[string]Config, error) {
 	configPath := filepath.Join(m.pluginDir, "config.json")
@@ -146,7 +115,6 @@ func (m *Manager) loadConfig() (map[string]Config, error) {
 	return config, nil
 }
 
-
 func (m *Manager) saveConfig(config map[string]Config) error {
 	configPath := filepath.Join(m.pluginDir, "config.json")
 	data, err := json.MarshalIndent(config, "", "  ")
@@ -155,4 +123,4 @@ func (m *Manager) saveConfig(config map[string]Config) error {
 	}
 
 	return os.WriteFile(configPath, data, 0644)
-} 
+}

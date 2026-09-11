@@ -2,8 +2,6 @@ module github.com/Fluxgo/flux
 
 go 1.23.0
 
-toolchain go1.24.2
-
 require (
 	github.com/fatih/color v1.18.0
 	github.com/fsnotify/fsnotify v1.9.0

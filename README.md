@@ -66,6 +66,69 @@ go install github.com/Fluxgo/flux/cmd/flux@latest
 
 ## Quick Start
 
+### Type-safe API (recommended)
+
+Flux 0.1.7 adds explicit routes and generic request/response handlers. This path
+uses ordinary Go functions, works naturally with services and interfaces, and
+does not rely on reflection or generated source files.
+
+```go
+package main
+
+import (
+	"net/http"
+
+	"github.com/Fluxgo/flux/pkg/flux"
+)
+
+type CreateUser struct {
+	Email string `json:"email" validate:"required,email"`
+	Name  string `json:"name" validate:"required,min=2"`
+}
+
+type User struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+func main() {
+	app, err := flux.New(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	app.POST("/users", flux.JSONBodyHandler(
+		func(ctx *flux.Context, input CreateUser) (User, error) {
+			// Standard context works with database/sql, gRPC, and Go SDKs.
+			_ = ctx.RequestContext()
+			return User{ID: "usr_123", Email: input.Email, Name: input.Name}, nil
+		},
+		http.StatusCreated,
+	),
+		flux.RouteName("users.create"),
+		flux.RouteDescription("Create a user"),
+		flux.RouteRequest(CreateUser{}),
+		flux.RouteResponse(User{}),
+	)
+
+	if err := app.Start(); err != nil {
+		panic(err)
+	}
+}
+```
+
+Typed helpers are also available independently:
+
+- `flux.Body[T]` parses and validates request bodies.
+- `flux.QueryParams[T]` parses and validates query strings.
+- `flux.PathParams[T]` parses and validates route parameters.
+- `flux.JSONHandler` adapts a typed response function.
+- `flux.JSONBodyHandler` adapts a typed request/response function.
+
+The convention-based controller API remains supported, so applications can
+migrate one endpoint at a time.
+
 ### Monolithic Application
 
 Create a new flux project:

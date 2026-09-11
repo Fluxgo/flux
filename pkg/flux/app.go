@@ -3,6 +3,7 @@ package flux
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -31,6 +32,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// Version is the current Flux framework release.
+const Version = "0.1.7"
+
 type Application struct {
 	config      *Config
 	server      *fiber.App
@@ -51,13 +55,32 @@ type Config struct {
 	Name        string
 	Version     string
 	Description string
-	Server      ServerConfig
-	Database    DatabaseConfig
-	Auth        auth.Config
-	Mailer      mailer.Config
-	Queue       queue.Config
-	CORS        CORSConfig
-	LogLevel    string
+	// GenerateRouteFiles enables the legacy runtime route generator. It is
+	// disabled by default because starting an application should not mutate the
+	// source tree. Prefer the explicit routing API for new applications.
+	GenerateRouteFiles bool
+	Server             ServerConfig
+	Database           DatabaseConfig
+	Auth               auth.Config
+	Mailer             mailer.Config
+	Queue              queue.Config
+	CORS               CORSConfig
+	LogLevel           string
+}
+
+// DefaultConfig returns a sensible baseline configuration.
+func DefaultConfig() *Config {
+	return &Config{
+		Name:        "flux",
+		Version:     "dev",
+		Description: "A Flux application",
+		Server: ServerConfig{
+			Host: "0.0.0.0",
+			Port: 3000,
+		},
+		CORS:     DefaultCORSConfig(),
+		LogLevel: "info",
+	}
 }
 
 type ServerConfig struct {
@@ -80,7 +103,7 @@ func DefaultCORSConfig() CORSConfig {
 		AllowOrigins:     "*",
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS,PATCH",
 		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Requested-With",
-		AllowCredentials: false, 
+		AllowCredentials: false,
 		ExposeHeaders:    "",
 		MaxAge:           86400,
 	}
@@ -117,11 +140,31 @@ func DefaultRateLimitConfig() RateLimitConfig {
 }
 
 func New(config *Config) (*Application, error) {
+	if config == nil {
+		config = DefaultConfig()
+	} else {
+		// Keep caller-owned configuration immutable while filling safe defaults.
+		copy := *config
+		config = &copy
+		if config.Name == "" {
+			config.Name = "flux"
+		}
+		if config.Version == "" {
+			config.Version = "dev"
+		}
+		if config.Server.Host == "" {
+			config.Server.Host = "0.0.0.0"
+		}
+		if config.CORS.AllowOrigins == "" {
+			config.CORS = DefaultCORSConfig()
+		}
+	}
+
 	fiberConfig := fiber.Config{
-		AppName:             config.Name,
-		ServerHeader:        "flux", 
-		ErrorHandler:        defaultErrorHandler,
-		DisableStartupMessage: true, 
+		AppName:               config.Name,
+		ServerHeader:          "flux",
+		ErrorHandler:          defaultErrorHandler,
+		DisableStartupMessage: true,
 	}
 
 	app := &Application{
@@ -134,7 +177,6 @@ func New(config *Config) (*Application, error) {
 	// Initialize the route manager
 	app.routes = NewRouteManager(app)
 
-	
 	logLevel := logger.LevelInfo
 	if config.LogLevel != "" {
 		logLevel = logger.ParseLevel(config.LogLevel)
@@ -246,24 +288,46 @@ func New(config *Config) (*Application, error) {
 }
 
 func defaultErrorHandler(c *fiber.Ctx, err error) error {
-	code := fiber.StatusInternalServerError
+	status := fiber.StatusInternalServerError
+	response := fiber.Map{"error": true, "message": http.StatusText(status)}
 
-	
-	if e, ok := err.(*fiber.Error); ok {
-		code = e.Code
+	var appErr *AppError
+	if errors.As(err, &appErr) {
+		status = appErr.StatusCode
+		if status == 0 {
+			status = fiber.StatusInternalServerError
+		}
+		response["message"] = appErr.Message
+		if appErr.Code != "" {
+			response["code"] = appErr.Code
+		}
+		if len(appErr.Details) > 0 {
+			response["details"] = appErr.Details
+		}
+	} else {
+		var fiberErr *fiber.Error
+		if errors.As(err, &fiberErr) {
+			status = fiberErr.Code
+			response["message"] = fiberErr.Message
+		}
 	}
 
-	return c.Status(code).JSON(fiber.Map{
-		"error":   true,
-		"message": err.Error(),
-	})
+	return c.Status(status).JSON(response)
 }
 
 func (app *Application) GetConfig() interface{} {
 	return app.config
 }
 
+// Config returns a copy of the application configuration.
+func (app *Application) Config() Config {
+	return *app.config
+}
+
 func (app *Application) GetDB() interface{} {
+	if app.database == nil {
+		return nil
+	}
 	return app.database.DB
 }
 
@@ -286,15 +350,18 @@ func (app *Application) Validator() *validator.Validate {
 func (app *Application) RegisterController(controller interface{}) {
 	app.mu.Lock()
 	defer app.mu.Unlock()
+	controllerType := reflect.TypeOf(controller)
+	controllerValue := reflect.ValueOf(controller)
+	if controllerType == nil || controllerType.Kind() != reflect.Ptr || controllerType.Elem().Kind() != reflect.Struct {
+		app.logger.Error("Cannot register controller %T: expected a pointer to a struct", controller)
+		return
+	}
 
 	if c, ok := controller.(interface{ SetApplication(*Application) }); ok {
 		c.SetApplication(app)
 	}
 
 	app.controllers = append(app.controllers, controller)
-
-	controllerType := reflect.TypeOf(controller)
-	controllerValue := reflect.ValueOf(controller)
 
 	controllerName := controllerType.Elem().Name()
 	controllerBaseName := strings.TrimSuffix(controllerName, "Controller")
@@ -310,10 +377,8 @@ func (app *Application) RegisterController(controller interface{}) {
 		routeInfo := parseRouteFromMethodName(method.Name, basePath)
 		handler := createHandlerFunc(method, controllerValue)
 
-		
 		description := descriptionFromMethod(controllerBaseName, method.Name)
 
-		
 		app.routes.Add(
 			routeInfo.HTTPMethod,
 			routeInfo.Path,
@@ -339,18 +404,17 @@ func (app *Application) RegisterController(controller interface{}) {
 		}
 	}
 
-	
-	if err := app.GenerateRouteFiles(); err != nil {
-		app.logger.Error("Failed to generate route files: %v", err)
+	if app.config.GenerateRouteFiles {
+		if err := app.GenerateRouteFiles(); err != nil {
+			app.logger.Error("Failed to generate route files: %v", err)
+		}
 	}
 }
 
-
 func descriptionFromMethod(controllerName string, methodName string) string {
-	
+
 	actionName := strings.TrimPrefix(methodName, "Handle")
 
-	
 	for _, method := range []string{"Get", "Post", "Put", "Delete", "Patch", "Options", "Head"} {
 		if strings.HasPrefix(actionName, method) {
 			actionName = strings.TrimPrefix(actionName, method)
@@ -358,7 +422,6 @@ func descriptionFromMethod(controllerName string, methodName string) string {
 		}
 	}
 
-	
 	var description strings.Builder
 	for i, r := range actionName {
 		if i > 0 && r >= 'A' && r <= 'Z' {
@@ -367,7 +430,6 @@ func descriptionFromMethod(controllerName string, methodName string) string {
 		description.WriteRune(r)
 	}
 
-	
 	if description.String() == "Index" {
 		return fmt.Sprintf("List all %ss", strings.ToLower(controllerName))
 	} else if description.String() == "ById" || description.String() == "By Id" {
@@ -383,14 +445,12 @@ func descriptionFromMethod(controllerName string, methodName string) string {
 	return description.String()
 }
 
-
 func (app *Application) GenerateRouteFiles() error {
-	
+
 	if err := os.MkdirAll("routes", 0755); err != nil {
 		return fmt.Errorf("failed to create routes directory: %w", err)
 	}
 
-	
 	if err := app.routes.GenerateRoutesFile("."); err != nil {
 		return fmt.Errorf("failed to generate routes.go: %w", err)
 	}
@@ -398,7 +458,6 @@ func (app *Application) GenerateRouteFiles() error {
 	app.logger.Info("Route files generated successfully")
 	return nil
 }
-
 
 func (app *Application) Routes() *RouteManager {
 	return app.routes
@@ -434,8 +493,9 @@ func parseRouteFromMethodName(methodName string, basePath string) RouteInfo {
 		}
 
 		actionPath := path.String()
+		resource := strings.TrimPrefix(basePath, "/")
 
-		if actionPath == "index" || actionPath == "" {
+		if actionPath == "index" || actionPath == "" || actionPath == resource || actionPath == resource+"s" {
 			return RouteInfo{
 				HTTPMethod: httpMethod,
 				Path:       basePath,
@@ -463,7 +523,12 @@ func parseRouteFromMethodName(methodName string, basePath string) RouteInfo {
 
 func createHandlerFunc(method reflect.Method, controllerValue reflect.Value) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		ctx := &Context{Ctx: c}
+		controller, _ := controllerValue.Interface().(interface{ App() *Application })
+		var app *Application
+		if controller != nil {
+			app = controller.App()
+		}
+		ctx := NewContext(c, app)
 		result := method.Func.Call([]reflect.Value{controllerValue, reflect.ValueOf(ctx)})
 		if len(result) > 0 && !result[0].IsNil() {
 			if err, ok := result[0].Interface().(error); ok {
@@ -503,7 +568,6 @@ func (app *Application) Listen(addr string) error {
 	return app.server.Listen(addr)
 }
 
-
 func getEnvironment() string {
 	env := os.Getenv("ENVIRONMENT")
 	if env == "" {
@@ -514,7 +578,6 @@ func getEnvironment() string {
 	}
 	return env
 }
-
 
 func (app *Application) Serve() error {
 	return app.Start()
@@ -541,10 +604,16 @@ func (app *Application) Shutdown() error {
 }
 
 func (app *Application) DB() *gorm.DB {
+	if app.database == nil {
+		return nil
+	}
 	return app.database.DB
 }
 
 func (app *Application) Auth() *auth.JWTManager {
+	if app.auth == nil {
+		return nil
+	}
 	return app.auth.JWTManager
 }
 
@@ -717,7 +786,6 @@ func (a *Application) ConfigureMiddleware(options ...interface{}) {
 		IdleTimeout:     120 * time.Second,
 	}
 
-	
 	for _, option := range options {
 		switch opt := option.(type) {
 		case MiddlewareOption:
@@ -777,15 +845,12 @@ func (a *Application) ConfigureMiddleware(options ...interface{}) {
 		}))
 	}
 
-	
 	a.server.Server().ReadTimeout = config.ReadTimeout
 	a.server.Server().WriteTimeout = config.WriteTimeout
 	a.server.Server().IdleTimeout = config.IdleTimeout
 
-	
 	a.server.Server().MaxRequestBodySize = fiberBodyLimitToInt(config.BodyLimit)
 }
-
 
 func fiberBodyLimitToInt(bodyLimit string) int {
 	units := map[string]int{

@@ -52,52 +52,40 @@ func createNewProject(name string) error {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
-	
+
 	mainContent := `package main
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/Fluxgo/flux/pkg/flux"
-	// Import your controllers and models as needed
-	// "` + name + `/app/controllers"
 )
 
+type HealthResponse struct {
+	Status string ` + "`json:\"status\"`" + `
+}
+
 func main() {
-	//New flux application
 	app, err := flux.New(&flux.Config{
 		Name:        "` + name + `",
-		Version:     "1.0.0",
+		Version:     "0.1.0",
 		Description: "A flux application",
 		Server: flux.ServerConfig{
-			Host:     "localhost",
-			Port:     3000,
-			BasePath: "/",
-		},
-		Database: flux.DatabaseConfig{
-			Driver: "sqlite",  
-			Name:   "flux.db",
-			// Uncomment these for other database types
-			// Host:     "localhost",
-			// Port:     3306,  
-			// Username: "flux_user",
-			// Password: "flux_password",
+			Host: "localhost",
+			Port: 3000,
 		},
 	})
 	if err != nil {
-		log.Fatalf("Failed to create application: %v", err)
+		log.Fatal(err)
 	}
 
-	// Register controllers directly
-	// Example: app.RegisterController(&controllers.UserController{})
-	// To register a new controller, simply uncomment the import above
-	// and add a line to register your controller here
-	
-	// Start the server
-	fmt.Printf("Server starting on http://localhost:3000\n")
+	app.GET("/health", flux.JSONHandler(func(_ *flux.Context) (HealthResponse, error) {
+		return HealthResponse{Status: "ok"}, nil
+	}), flux.RouteDescription("Application health"))
+
+	log.Printf("server starting on http://localhost:3000")
 	if err := app.Start(); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		log.Fatal(err)
 	}
 }
 `
@@ -111,7 +99,7 @@ func main() {
 # Application Settings
 app:
   name: "` + name + `"
-  version: "1.0.0"
+  version: "0.1.0"
   description: "A powerful web application built with flux Framework"
   environment: "development" 
   debug: true
@@ -171,10 +159,10 @@ view:
 
 	modContent := `module ` + name + `
 
-go 1.20
+go 1.23
 
 require (
-	github.com/Fluxgo/flux v0.1.6
+	github.com/Fluxgo/flux v0.1.7
 )
 `
 
@@ -881,12 +869,10 @@ func (s *` + name + `) Delete` + strings.TrimSuffix(name, "Service") + `(id uint
 func generateDocumentation() error {
 	outputDir := filepath.Join("docs")
 
-	
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create docs directory: %w", err)
 	}
 
-	
 	app, err := flux.New(&flux.Config{
 		Name:        getCurrentModuleName(),
 		Version:     "1.0.0",
@@ -901,16 +887,13 @@ func generateDocumentation() error {
 		return fmt.Errorf("failed to create application for documentation: %w", err)
 	}
 
-	
 	app.Routes()
 
-	
 	spec, err := app.GenerateOpenAPI()
 	if err != nil {
 		return fmt.Errorf("failed to generate OpenAPI specification: %w", err)
 	}
 
-	
 	jsonSpec, err := json.MarshalIndent(spec, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
@@ -927,15 +910,12 @@ func generateDocumentation() error {
 		return fmt.Errorf("failed to generate Swagger UI: %w", err)
 	}
 
-	
 	if err := os.WriteFile(filepath.Join(outputDir, "swagger.html"), []byte(swaggerUI), 0644); err != nil {
 		return fmt.Errorf("failed to write Swagger UI: %w", err)
 	}
 
-	
 	markdown := generateMarkdownDocumentation(app, spec)
 
-	
 	if err := os.WriteFile(filepath.Join(outputDir, "api.md"), []byte(markdown), 0644); err != nil {
 		return fmt.Errorf("failed to write markdown documentation: %w", err)
 	}
@@ -958,7 +938,6 @@ func generateMarkdownDocumentation(app *flux.Application, spec *flux.OpenAPISpec
 
 	doc.WriteString("## Endpoints\n\n")
 
-	
 	var paths []string
 	for path := range spec.Paths {
 		paths = append(paths, path)
@@ -968,7 +947,6 @@ func generateMarkdownDocumentation(app *flux.Application, spec *flux.OpenAPISpec
 	for _, path := range paths {
 		pathItem := spec.Paths[path]
 
-		
 		for _, method := range []struct {
 			Name      string
 			Operation *flux.Operation
@@ -983,7 +961,6 @@ func generateMarkdownDocumentation(app *flux.Application, spec *flux.OpenAPISpec
 				doc.WriteString(fmt.Sprintf("### %s %s\n\n", method.Name, path))
 				doc.WriteString(fmt.Sprintf("**Description:** %s\n\n", method.Operation.Description))
 
-				
 				if len(method.Operation.Parameters) > 0 {
 					doc.WriteString("**Parameters:**\n\n")
 					doc.WriteString("| Name | Located in | Description | Required | Schema |\n")
@@ -996,13 +973,11 @@ func generateMarkdownDocumentation(app *flux.Application, spec *flux.OpenAPISpec
 					doc.WriteString("\n")
 				}
 
-				
 				if method.Operation.RequestBody != nil {
 					doc.WriteString("**Request Body:**\n\n")
 					doc.WriteString(fmt.Sprintf("Description: %s\n\n", method.Operation.RequestBody.Description))
 					doc.WriteString("Content Type: application/json\n\n")
 
-					
 					for contentType, mediaType := range method.Operation.RequestBody.Content {
 						if mediaType.Schema != nil && mediaType.Schema.Properties != nil {
 							doc.WriteString(fmt.Sprintf("Schema (%s):\n\n", contentType))
@@ -1023,7 +998,6 @@ func generateMarkdownDocumentation(app *flux.Application, spec *flux.OpenAPISpec
 					}
 				}
 
-				
 				doc.WriteString("**Responses:**\n\n")
 				doc.WriteString("| Status Code | Description | Schema |\n")
 				doc.WriteString("| ----------- | ----------- | ------ |\n")
@@ -1037,7 +1011,6 @@ func generateMarkdownDocumentation(app *flux.Application, spec *flux.OpenAPISpec
 				for _, code := range codes {
 					response := method.Operation.Responses[code]
 
-					
 					schemaType := "No content"
 					for _, mediaType := range response.Content {
 						if mediaType.Schema != nil {
@@ -1053,7 +1026,6 @@ func generateMarkdownDocumentation(app *flux.Application, spec *flux.OpenAPISpec
 		}
 	}
 
-	
 	if len(spec.Components.Schemas) > 0 {
 		doc.WriteString("## Models\n\n")
 

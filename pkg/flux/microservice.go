@@ -15,7 +15,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-
 type Microservice struct {
 	Name        string
 	Version     string
@@ -405,10 +404,10 @@ func CreateMicroserviceProject(config *MicroserviceConfig) error {
 
 	modContent := fmt.Sprintf(`module github.com/%s
 
-go 1.20
+go 1.23
 
 require (
-	github.com/Fluxgo/flux v0.1.6
+	github.com/Fluxgo/flux v0.1.7
 	github.com/gofiber/fiber/v2 v2.52.6
 )
 `, name)
